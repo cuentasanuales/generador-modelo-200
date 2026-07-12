@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generador Modelo 200 (2025) — fichero .200 BOE</title>
+<meta name="robots" content="noindex">
+<style>
+  :root { --azul:#0b5394; --gris:#f4f6f8; --borde:#d5dbe3; }
+  * { box-sizing:border-box; }
+  body { font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; margin:0; color:#1c2733; background:var(--gris); }
+  header { background:var(--azul); color:#fff; padding:18px 24px; }
+  header h1 { margin:0; font-size:20px; }
+  header p { margin:4px 0 0; opacity:.85; font-size:13px; }
+  main { max-width:1000px; margin:0 auto; padding:20px; }
+  .card { background:#fff; border:1px solid var(--borde); border-radius:10px; padding:18px 20px; margin-bottom:18px; }
+  h2 { font-size:16px; margin:0 0 10px; color:var(--azul); }
+  h3 { font-size:14px; margin:18px 0 6px; }
+  h3.warn { color:#b45309; }
+  .dz { display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px; }
+  .dz label.box { display:block; border:2px dashed var(--borde); border-radius:8px; padding:14px; cursor:pointer; background:#fafbfc; font-size:13px; }
+  .dz label.box:hover { border-color:var(--azul); }
+  .dz input[type=file] { display:none; }
+  .dz .ok { color:#15803d; font-size:12px; display:block; margin-top:6px; min-height:1em; word-break:break-all; }
+  button { background:var(--azul); color:#fff; border:0; border-radius:6px; padding:9px 16px; font-size:14px; cursor:pointer; }
+  button:disabled { background:#9fb3c8; cursor:not-allowed; }
+  button.mini { padding:2px 8px; font-size:12px; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td,th { border-bottom:1px solid var(--borde); padding:4px 6px; text-align:left; }
+  input,select { border:1px solid var(--borde); border-radius:4px; padding:5px 6px; font-size:13px; width:100%; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:10px; margin:8px 0; font-size:13px; }
+  table.cas td.cod { color:#64748b; font-family:ui-monospace,monospace; width:70px; }
+  table.cas td.imp { width:150px; text-align:right; }
+  table.cas td.imp input { text-align:right; }
+  tr.total td { font-weight:600; background:#f1f5f9; }
+  tr.total input { background:#f1f5f9; border:0; font-weight:600; }
+  .err { color:#b91c1c; background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:8px 8px 8px 26px; font-size:13px; }
+  .ok { color:#15803d; font-size:13px; }
+  .nota { color:#64748b; font-size:12px; }
+  footer { text-align:center; color:#64748b; font-size:12px; padding:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Generador Modelo 200 · ejercicio 2025 · fichero .200 (formato BOE)</h1>
+  <p>Importable en Sociedades WEB (AEAT). Todo se procesa en tu navegador: los PDF no se suben a ningún servidor.</p>
+</header>
+<main>
+  <div class="card">
+    <h2>1 · Sube los tres PDF</h2>
+    <div class="dz">
+      <label class="box">📄 <b>Modelo 200 de 2024</b> (PDF AEAT presentado)<br><span class="nota">Datos estructurales: administradores, socios, titulares reales…</span>
+        <input type="file" id="f200" accept="application/pdf"><span class="ok" id="f200-ok"></span></label>
+      <label class="box">📊 <b>Balance de situación 2025</b><br><span class="nota">Exportado de tu contabilidad (Holded o similar)</span>
+        <input type="file" id="fbal" accept="application/pdf"><span class="ok" id="fbal-ok"></span></label>
+      <label class="box">📈 <b>Pérdidas y ganancias 2025</b><br><span class="nota">Exportado de tu contabilidad</span>
+        <input type="file" id="fpyg" accept="application/pdf"><span class="ok" id="fpyg-ok"></span></label>
+    </div>
+    <p><button id="btn-analizar">Analizar PDFs</button> <span class="nota" id="estado-dr">Cargando diseño de registro…</span>
+    <span class="nota" id="estado-parse"></span></p>
+  </div>
+
+  <div class="card" id="paso2" style="display:none">
+    <h2>2 · Revisa y corrige</h2>
+    <div id="sec-ident"></div>
+    <div id="sec-admins"></div>
+    <div id="sec-socios"></div>
+    <div id="sec-titulares"></div>
+    <div id="sec-secretario"></div>
+    <div id="sec-reps"></div>
+    <div id="sec-balance"></div>
+    <div id="sec-pyg"></div>
+    <div id="sec-sinasignar"></div>
+    <div id="sec-liq"></div>
+    <h3>Comprobaciones</h3>
+    <div id="sec-checks"></div>
+    <p><button id="btn-generar" disabled>Generar fichero .200</button></p>
+    <div id="sec-resultado"></div>
+  </div>
+
+  <div class="card nota">
+    <b>Avisos.</b> Esta herramienta precarga la declaración (período 0A, entidades Normal/Abreviado/PYMES) siguiendo el
+    flujo del skill <i>generar-200</i>: página 13 incluida aunque vaya a ceros, cuadres al céntimo y casillas
+    padre+hijos coherentes. No sustituye tu criterio fiscal: decisiones como compensar BINs, reservas de
+    capitalización/nivelación o el tipo de gravamen las confirmas tú. Prueba siempre la importación en
+    <b>Sociedades WEB Open</b> antes de presentar. Los desgloses estimados deben verificarse contra el mayor.
+  </div>
+</main>
+<footer>Generador .200 · diseño de registro AEAT ejercicio 2025 · uso profesional</footer>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
+<script src="gen200.js"></script>
+<script src="casillas.js"></script>
+<script src="parsers.js"></script>
+<script src="montador.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
