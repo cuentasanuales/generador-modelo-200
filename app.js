@@ -2,7 +2,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var dr = null, model = null, sinAsignarBal = [], sinAsignarPyg = [];
+  var dr = null, model = null, sinAsignarBal = [], sinAsignarPyg = [], copiadoDelPrevio = false;
 
   var fmt = new Intl.NumberFormat('es-ES', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   function eur(v) { return fmt.format(v || 0); }
@@ -41,13 +41,15 @@
 
   $('btn-analizar').addEventListener('click', function () {
     var f200 = $('f200').files[0], fbal = $('fbal').files[0], fpyg = $('fpyg').files[0];
-    if (!fbal || !fpyg) { alert('Sube al menos el Balance y la PyG de 2025.'); return; }
+    if ((!fbal || !fpyg) && !f200) { alert('Sube el Balance y la PyG del ejercicio, o al menos el Modelo 200 del año anterior (se copiarán sus cifras).'); return; }
     $('btn-analizar').disabled = true;
     $('estado-parse').textContent = 'Analizando PDFs…';
-    var jobs = [pdfALineas(fbal), pdfALineas(fpyg), f200 ? pdfALineas(f200) : Promise.resolve(null)];
+    var jobs = [fbal ? pdfALineas(fbal) : Promise.resolve(null),
+                fpyg ? pdfALineas(fpyg) : Promise.resolve(null),
+                f200 ? pdfALineas(f200) : Promise.resolve(null)];
     Promise.all(jobs).then(function (res) {
-      var bal = Parsers.parseContable(res[0]);
-      var pyg = Parsers.parseContable(res[1]);
+      var bal = res[0] ? Parsers.parseContable(res[0]) : null;
+      var pyg = res[1] ? Parsers.parseContable(res[1]) : null;
       var prev = res[2] ? Parsers.parseM200Previo(res[2]) : null;
       construirModelo(prev, bal, pyg);
       renderTodo();
@@ -61,8 +63,20 @@
   });
 
   function construirModelo(prev, bal, pyg) {
-    var mb = Casillas.mapear(bal.cuentas, Casillas.MAP_BALANCE);
-    var mp = Casillas.mapear(pyg.cuentas, Casillas.MAP_PYG);
+    var BAL_SET = {}, PYG_SET = {};
+    Casillas.BALANCE.forEach(function (x) { BAL_SET[x.c] = 1; });
+    Casillas.PYG.forEach(function (x) { PYG_SET[x.c] = 1; });
+    copiadoDelPrevio = false;
+    function delPrevio(set) {
+      var out = {};
+      if (prev) Object.keys(prev.casillasRaw).forEach(function (c) {
+        if (set[c]) out[c] = prev.casillasRaw[c];
+      });
+      copiadoDelPrevio = true;
+      return { casillas: out, sinAsignar: [] };
+    }
+    var mb = bal ? Casillas.mapearDocumento(bal, 'balance') : delPrevio(BAL_SET);
+    var mp = pyg ? Casillas.mapearDocumento(pyg, 'pyg') : delPrevio(PYG_SET);
     sinAsignarBal = mb.sinAsignar; sinAsignarPyg = mp.sinAsignar;
     var vBal = mb.casillas, vPyg = mp.casillas;
     var v = {}; Object.keys(vBal).forEach(function (c) { v[c] = vBal[c]; });
@@ -70,7 +84,7 @@
     Casillas.recalcular(v);
     model = {
       ejercicio: '2025',
-      ident: { nif: (prev && prev.nif) || bal.nif || '', rs: (prev && prev.rs) || '',
+      ident: { nif: (prev && prev.nif) || (bal && bal.nif) || '', rs: (prev && prev.rs) || (bal && bal.rs) || '',
                cnae: (prev && prev.cnae) || '', contactoNombre: '', contactoEmail: '', telefono: '' },
       caracteres: { erd: true, micro: true },
       estados: { balance: '2', pyg: '2' },
@@ -80,6 +94,8 @@
       representantes: (prev && prev.representantes) || [],
       v: v,
       liq: { bins: 0, tipo: 'micro', tipoCustom: 21, retenciones: 0,
+             correccISAumentos: v['00326'] < 0 ? -v['00326'] : 0,
+             correccISDisminuciones: v['00326'] > 0 ? v['00326'] : 0,
              pagos: [0, 0, 0], cuotaPrev: prev ? prev.cuotaLiquidaPrev : null },
       aplicacion: 'remanente',
     };
@@ -206,7 +222,8 @@
 
   function renderLiq() {
     var rtdo = model.v['00500'] || 0;
-    var biPrevia = rtdo; // + ajustes (no soportados aquí; hacerlos en Sociedades WEB)
+    var aum = r2(model.liq.correccISAumentos), dis = r2(model.liq.correccISDisminuciones);
+    var biPrevia = r2(rtdo + aum - dis); // resto de ajustes: hacerlos en Sociedades WEB
     var bins = Math.min(Number(model.liq.bins) || 0, Math.max(biPrevia, 0));
     var bi = r2(biPrevia - bins);
     var cq = calcCuota(bi, model.liq);
@@ -217,6 +234,8 @@
                       retenciones: ret, pagos: pagos, resultado: resultado };
     var h = '<h3>Liquidación</h3><table class="cas">';
     h += fila('Resultado contable [00500]', eur(rtdo));
+    h += '<tr><td colspan="2">Corrección IS: aumentos [00301]</td><td class="imp"><input id="l-aum" value="' + eur(aum) + '"></td></tr>';
+    h += '<tr><td colspan="2">Corrección IS: disminuciones [00302]</td><td class="imp"><input id="l-dis" value="' + eur(dis) + '"></td></tr>';
     h += fila('BI previa [00550]', eur(biPrevia));
     h += '<tr><td colspan="2">Compensación BINs [00547]</td><td class="imp"><input id="l-bins" value="' + eur(bins) + '"></td></tr>';
     h += fila('Base imponible [00552]', eur(bi));
@@ -243,7 +262,7 @@
     $('sec-liq').innerHTML = h;
     function fila(a, b) { return '<tr><td colspan="2">' + a + '</td><td class="imp">' + b + '</td></tr>'; }
     function sel(vv) { return model.liq.tipo === vv ? ' selected' : ''; }
-    ['l-bins', 'l-ret', 'l-p0', 'l-p1', 'l-p2'].forEach(function (id) {
+    ['l-bins', 'l-ret', 'l-p0', 'l-p1', 'l-p2', 'l-aum', 'l-dis'].forEach(function (id) {
       $(id).addEventListener('change', leerLiq);
     });
     $('l-tipo').addEventListener('change', leerLiq);
@@ -253,6 +272,8 @@
 
   function leerLiq() {
     model.liq.bins = parseNum($('l-bins').value);
+    model.liq.correccISAumentos = parseNum($('l-aum').value);
+    model.liq.correccISDisminuciones = parseNum($('l-dis').value);
     model.liq.retenciones = parseNum($('l-ret').value);
     model.liq.pagos = [parseNum($('l-p0').value), parseNum($('l-p1').value), parseNum($('l-p2').value)];
     model.liq.tipo = $('l-tipo').value;
@@ -270,12 +291,13 @@
     if (!model.socios.length) errs.push('Añade al menos un socio (B.2 — obligatorio en SL)');
     if (!model.titulares.length) errs.push('Añade al menos un titular real');
     if (sinAsignarBal.length + sinAsignarPyg.length) errs.push('Quedan cuentas sin asignar a casilla');
+    if (copiadoDelPrevio) errs.push('AVISO: balance/PyG copiados del Modelo 200 del año anterior — actualiza las cifras al ejercicio actual antes de generar');
     var bi = model.liqCalc ? model.liqCalc.bi : 0;
     if (model.liq.tipo === 'micro' && bi > 50000) errs.push('BI > 50.000 con escala micro: la casilla [00558] llevará 21,00; revisa la cuota en Sociedades WEB (tramo 22%)');
     var h = errs.length ? '<ul class="err"><li>' + errs.map(esc).join('</li><li>') + '</li></ul>'
                         : '<p class="ok">Sin errores de cuadre ✓</p>';
     $('sec-checks').innerHTML = h;
-    $('btn-generar').disabled = errs.filter(function (e) { return !/00558/.test(e); }).length > 0;
+    $('btn-generar').disabled = errs.filter(function (e) { return !/00558|AVISO/.test(e); }).length > 0;
     function esc(s) { return s; }
   }
 
@@ -351,7 +373,9 @@
         balance: {}, pyg: {},
         liq: { biPrevia: lc.biPrevia, bins: lc.bins, bi: lc.bi, tipoStr: lc.tipoStr,
                cuota: lc.cuota, retenciones: lc.retenciones, pagos: lc.pagos,
-               resultado: lc.resultado, correccISAumentos: 0, correccISDisminuciones: 0 },
+               resultado: lc.resultado,
+               correccISAumentos: r2(model.liq.correccISAumentos),
+               correccISDisminuciones: r2(model.liq.correccISDisminuciones) },
         aplicacion: model.aplicacion,
       };
       var PYG_SET = {};

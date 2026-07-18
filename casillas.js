@@ -239,6 +239,128 @@
     '129': [],
   };
 
+
+  // ── Mapeo por epígrafes (informes sin números de cuenta) ──
+  // [regex sobre etiqueta normalizada (minúsculas sin acentos), destino, sección opcional]
+  // destino: casilla '000xx' o bucket '@XXX' (subtotal que solo se usa si no hay hijos)
+  var EPIG_SKIP = [
+    /^[a-d]\)?\s*\)?\s*(activo no corriente|activo corriente|pasivo no corriente|pasivo corriente|patrimonio neto)/,
+    /^(activo no corriente|activo corriente|pasivo no corriente|pasivo corriente|patrimonio neto)/,
+    /total/, /fondos propios/, /^activo\b/, /^pasivo\b/,
+    /resultado de explotacion/, /resultado financiero/, /resultado antes de impuestos/,
+    /cuenta de perdidas/, /imputacion de subvenciones/, /deterioro y resultado por enajenaciones/,
+    /^resultado del ejercicio/,
+  ];
+  var EPIG_BALANCE = [
+    [/inmovilizado intangible|fondo de comercio/, '00110'],
+    [/inmovilizado material|inversiones? en curso/, '00111'],
+    [/inversiones inmobiliarias/, '00115'],
+    [/(inversiones|creditos).*grupo.*largo|grupo y asociadas a largo/, '00125', 'activo'],
+    [/inversiones financieras a largo/, '00133'],
+    [/activos por impuesto diferido/, '00134'],
+    [/existencias/, '00138'],
+    [/clientes/, '00150'],
+    [/otros deudores/, '00159'],
+    [/administraciones publicas/, '00159', 'activo'],
+    [/administraciones publicas/, '00249', 'pasivo'],
+    [/deudores comerciales/, '@DEU'],
+    [/(inversiones|creditos).*grupo.*corto/, '00167', 'activo'],
+    [/inversiones financieras a corto/, '00175'],
+    [/periodificaciones/, '00176', 'activo'],
+    [/periodificaciones/, '00250', 'pasivo'],
+    [/efectivo|tesoreria/, '00177'],
+    [/prima de emision/, '00190'],
+    [/reserva de capitalizacion/, '01001'],
+    [/reserva de nivelacion/, '01002'],
+    [/reserva/, '00193'],
+    [/resultados? (de ejercicios anteriores|negativos)|remanente/, '00195'],
+    [/aportaciones de socios/, '00198'],
+    [/resultado del ejercicio/, '00199'],
+    [/subvenciones/, '00209'],
+    [/capital/, '00188'],
+    [/provisiones a corto/, '00230'],
+    [/provisiones/, '00211', 'pasivo'],
+    [/deudas.*grupo.*largo/, '00223'],
+    [/deudas a largo.*entidades de credito|entidades de credito.*largo/, '00218'],
+    [/deudas a largo/, '00222'],
+    [/pasivos por impuesto diferido/, '00224'],
+    [/deudas.*grupo.*corto/, '00238'],
+    [/deudas a corto.*entidades de credito|entidades de credito.*corto/, '00233'],
+    [/deudas a corto/, '00237'],
+    [/proveedores/, '00240'],
+    [/acreedores varios|otros acreedores/, '00249'],
+    [/acreedores comerciales/, '@ACR'],
+  ];
+  var EPIG_PYG = [
+    [/cifra de negocios/, '00255'],
+    [/variacion de existencias/, '00258'],
+    [/trabajos realizados por la empresa/, '00259'],
+    [/consumo de mercaderias/, '00261'],
+    [/consumo de materias/, '00262'],
+    [/trabajos realizados por otras/, '00263'],
+    [/aprovisionamientos/, '@APR'],
+    [/subvenciones de explotacion/, '00267'],
+    [/otros ingresos de explotacion|ingresos accesorios/, '00266'],
+    [/sueldos|salarios/, '00271'],
+    [/indemnizaciones/, '00273'],
+    [/seguridad social|cargas sociales/, '00274'],
+    [/servicios profesionales/, '00253'],
+    [/servicios exteriores/, '00254'],
+    [/tributos/, '00281'],
+    [/perdidas.*deterioro.*comerciales/, '00282'],
+    [/otros gastos de gestion/, '00283'],
+    [/otros gastos de explotacion/, '@OGE'],
+    [/amortizacion/, '00284'],
+    [/excesos de provisiones/, '00286'],
+    [/otros resultados/, '00295'],
+    [/ingresos financieros/, '00297'],
+    [/gastos financieros/, '00305'],
+    [/diferencias de cambio/, '00312'],
+    [/impuestos sobre beneficios/, '00326'],
+  ];
+  var BUCKETS = { '@DEU': ['00150', '00153', '00159', '00159'],
+                  '@ACR': ['00240', '00249', '00249'],
+                  '@APR': ['00261', '00262', '00263', '00262'],
+                  '@GP':  ['00271', '00273', '00274', '00277', '00271'],
+                  '@OGE': ['00253', '00254', '00281', '00282', '00283', '00254'] };
+
+  function normLbl(s) {
+    return String(s).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+
+  function mapearEpigrafes(epigrafes, tipo) {
+    var reglas = tipo === 'balance' ? EPIG_BALANCE : EPIG_PYG;
+    var casillas = {}, sinAsignar = [], buckets = {};
+    epigrafes.forEach(function (e) {
+      if (!e.importe) return;
+      var lbl = normLbl(e.label).replace(/^[ivxabcd0-9]+[.)\-]\s*/g, '').trim();
+      var dest = null;
+      for (var i = 0; i < reglas.length && !dest; i++) {
+        var r = reglas[i];
+        if (r[2] && r[2] !== e.seccion) continue;
+        if (r[0].test(lbl)) dest = r[1];
+      }
+      if (!dest) {
+        var skip = EPIG_SKIP.some(function (rx) { return rx.test(lbl); });
+        if (!skip) sinAsignar.push({ num: '', nombre: e.label, importe: e.importe });
+        return;
+      }
+      if (dest[0] === '@') { buckets[dest] = Math.round(((buckets[dest] || 0) + e.importe) * 100) / 100; return; }
+      casillas[dest] = Math.round(((casillas[dest] || 0) + e.importe) * 100) / 100;
+    });
+    Object.keys(buckets).forEach(function (b) {
+      var def = BUCKETS[b], hijos = def.slice(0, -1), fallback = def[def.length - 1];
+      var hayHijos = hijos.some(function (c) { return casillas[c]; });
+      if (!hayHijos) casillas[fallback] = Math.round(((casillas[fallback] || 0) + buckets[b]) * 100) / 100;
+    });
+    return { casillas: casillas, sinAsignar: sinAsignar };
+  }
+
+  function mapearDocumento(doc, tipo) {
+    if (doc.modo === 'cuentas') return mapear(doc.cuentas, tipo === 'balance' ? MAP_BALANCE : MAP_PYG);
+    return mapearEpigrafes(doc.epigrafes || [], tipo);
+  }
+
   function mapear(cuentas, mapa) {
     var casillas = {}, sinAsignar = [];
     cuentas.forEach(function (cta) {
@@ -277,5 +399,6 @@
   }
 
   return { BALANCE: BALANCE, PYG: PYG, SUMAS: SUMAS, MAP_BALANCE: MAP_BALANCE, MAP_PYG: MAP_PYG,
-           mapear: mapear, recalcular: recalcular, comprobar: comprobar, FIN_AUTO: FIN_AUTO };
+           mapear: mapear, mapearEpigrafes: mapearEpigrafes, mapearDocumento: mapearDocumento,
+           recalcular: recalcular, comprobar: comprobar, FIN_AUTO: FIN_AUTO };
 }));
