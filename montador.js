@@ -155,11 +155,17 @@
     p.set('[00621]', resultado);
     pages.push(p);
 
-    // ── Página 20 ──
+    // ── Página 20: límite deducibilidad gastos financieros (art. 16 LIS) ──
+    // [01249] = 30% x (i1 - i2 - i3 - i4 + i5 - i6), signos de PyG:
+    // i1=rtdo. explotación [01250], i2=amortización [01251]; i3/i4/i5/i6 no
+    // se rastrean aquí (ajustar en Sociedades WEB si aplican).
     var rex = r2(Number(d.pyg['00296']) || 0);
+    var amort = r2(Number(d.pyg['00284']) || 0);
+    var bo = r2(rex - amort); // restar amortización negativa = sumarla al BO
     p = new G.PageBuilder(dr, 'DP200020');
-    p.set('[01249]', r2(Math.max(rex, 0) * 0.3));
+    p.set('[01249]', r2(bo * 0.3));
     p.set('[01250]', rex);
+    if (amort) p.set('[01251]', amort);
     p.set('[02369]', 1000000.00);
     pages.push(p);
 
