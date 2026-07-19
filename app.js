@@ -98,6 +98,7 @@
              correccISDisminuciones: v['00326'] > 0 ? v['00326'] : 0,
              pagos: [0, 0, 0], cuotaPrev: prev ? prev.cuotaLiquidaPrev : null },
       aplicacion: 'remanente',
+      rect: { activa: false, justificante: '', ingresoAnterior: 0, devolucionAnterior: 0 },
     };
     if (model.liq.cuotaPrev) {
       var pf = r2(model.liq.cuotaPrev * 0.18);
@@ -120,6 +121,12 @@
     h += '<div class="grid"><label><input type="checkbox" id="c-erd" ' + (model.caracteres.erd ? 'checked' : '') + '> ERD [00006]</label>' +
          '<label><input type="checkbox" id="c-micro" ' + (model.caracteres.micro ? 'checked' : '') + '> Tipo reducido INCN&lt;1M [00088]</label>' +
          '<label>Estados: <select id="c-estados"><option value="2" selected>Abreviado</option><option value="3">PYMES</option><option value="1">Normal</option></select></label></div>';
+    h += '<h3>Autoliquidación rectificativa</h3><div class="grid">' +
+         '<label><input type="checkbox" id="r-act" ' + (model.rect.activa ? 'checked' : '') + '> Es rectificativa de una autoliquidación anterior</label>' +
+         campo('r-just', 'Nº justificante autoliquidación anterior (13 dígitos)', model.rect.justificante) +
+         campo('r-ing', 'Ingresado en autoliquidaciones anteriores del período [01578]', model.rect.ingresoAnterior ? eur(model.rect.ingresoAnterior) : '') +
+         campo('r-dev', 'Devoluciones acordadas por la AEAT del período [01584]', model.rect.devolucionAnterior ? eur(model.rect.devolucionAnterior) : '') +
+         '</div>';
     $('sec-ident').innerHTML = h;
 
     renderTabla('sec-admins', 'Administradores', model.admins,
@@ -230,8 +237,10 @@
     var ret = r2(model.liq.retenciones);
     var pagos = model.liq.pagos.map(r2);
     var resultado = r2(cq.cuota - ret - pagos[0] - pagos[1] - pagos[2]);
+    var ingAnt = r2(model.rect.ingresoAnterior), devAnt = r2(model.rect.devolucionAnterior);
+    var resultadoFinal = model.rect.activa ? r2(resultado - ingAnt + devAnt) : resultado;
     model.liqCalc = { biPrevia: r2(biPrevia), bins: bins, bi: bi, cuota: cq.cuota, tipoStr: cq.tipoStr,
-                      retenciones: ret, pagos: pagos, resultado: resultado };
+                      retenciones: ret, pagos: pagos, resultado: resultado, resultadoFinal: resultadoFinal };
     var h = '<h3>Liquidación</h3><table class="cas">';
     h += fila('Resultado contable [00500]', eur(rtdo));
     h += '<tr><td colspan="2">Corrección IS: aumentos [00301]</td><td class="imp"><input id="l-aum" value="' + eur(aum) + '"></td></tr>';
@@ -254,7 +263,12 @@
     if (model.liq.cuotaPrev != null) {
       h += '<tr><td colspan="3" class="nota">Sugerencia 2P/3P = 18% de la cuota líquida ' + (Number(model.ejercicio) - 1) + ' (' + eur(model.liq.cuotaPrev) + ') = ' + eur(r2(model.liq.cuotaPrev * 0.18)) + '. Confírmalo con los 202 presentados.</td></tr>';
     }
-    h += fila('<b>Resultado [00621]</b>', '<b>' + eur(resultado) + (resultado > 0 ? ' a ingresar' : (resultado < 0 ? ' a devolver' : '')) + '</b>');
+    if (model.rect.activa) {
+      h += fila('Resultado de la autoliquidación [01586]', eur(resultado));
+      if (ingAnt) h += fila('− Ingresado en autoliq. anteriores [01578]', eur(ingAnt));
+      if (devAnt) h += fila('+ Devoluciones acordadas AEAT [01584]', eur(devAnt));
+    }
+    h += fila('<b>Resultado [00621]</b>', '<b>' + eur(resultadoFinal) + (resultadoFinal > 0 ? ' a ingresar' : (resultadoFinal < 0 ? ' a devolver' : '')) + '</b>');
     h += '<tr><td colspan="2">Aplicación del resultado</td><td><select id="l-apl">' +
       '<option value="remanente"' + (model.aplicacion === 'remanente' ? ' selected' : '') + '>A remanente</option>' +
       '<option value="reservas"' + (model.aplicacion === 'reservas' ? ' selected' : '') + '>A reservas voluntarias</option></select></td></tr>';
@@ -294,6 +308,7 @@
     if (copiadoDelPrevio) errs.push('AVISO: balance/PyG copiados del Modelo 200 del año anterior — actualiza las cifras al ejercicio actual antes de generar');
     var bi = model.liqCalc ? model.liqCalc.bi : 0;
     if (model.liq.tipo === 'micro' && bi > 50000) errs.push('BI > 50.000 con escala micro: la casilla [00558] llevará 21,00; revisa la cuota en Sociedades WEB (tramo 22%)');
+    if (model.rect.activa && model.rect.justificante.length !== 13) errs.push('Rectificativa: el nº de justificante de la autoliquidación anterior debe tener 13 dígitos');
     var h = errs.length ? '<ul class="err"><li>' + errs.map(esc).join('</li><li>') + '</li></ul>'
                         : '<p class="ok">Sin errores de cuadre ✓</p>';
     $('sec-checks').innerHTML = h;
@@ -324,6 +339,13 @@
     if (t.id === 'c-erd') model.caracteres.erd = t.checked;
     if (t.id === 'c-micro') model.caracteres.micro = t.checked;
     if (t.id === 'c-estados') model.estados = { balance: t.value, pyg: t.value };
+    if (/^r-/.test(t.id)) {
+      model.rect.activa = $('r-act').checked;
+      model.rect.justificante = $('r-just').value.replace(/\D/g, '');
+      model.rect.ingresoAnterior = parseNum($('r-ing').value);
+      model.rect.devolucionAnterior = parseNum($('r-dev').value);
+      renderLiq(); comprobarYMostrar();
+    }
     var m = /^(sec-\w+)-(\d+)-(\w+)$/.exec(t.id);
     if (m) {
       var arr = { 'sec-admins': model.admins, 'sec-socios': model.socios,
@@ -377,6 +399,9 @@
                correccISAumentos: r2(model.liq.correccISAumentos),
                correccISDisminuciones: r2(model.liq.correccISDisminuciones) },
         aplicacion: model.aplicacion,
+        rect: { activa: model.rect.activa, justificante: model.rect.justificante,
+                ingresoAnterior: r2(model.rect.ingresoAnterior),
+                devolucionAnterior: r2(model.rect.devolucionAnterior) },
       };
       var PYG_SET = {};
       Casillas.PYG.forEach(function (x) { PYG_SET[x.c] = 1; });

@@ -34,7 +34,11 @@
     // ── Página 1 ──
     p = new G.PageBuilder(dr, 'DP200001');
     var resultado = d.liq.resultado;
-    p.set(6.0, resultado > 0 ? 'I' : (resultado < 0 ? 'D' : 'N'));
+    var rect = d.rect || {};
+    var ingAnt = r2(Number(rect.ingresoAnterior) || 0);
+    var devAnt = r2(Number(rect.devolucionAnterior) || 0);
+    var resultadoFinal = rect.activa ? r2(resultado - ingAnt + devAnt) : resultado;
+    p.set(6.0, resultadoFinal > 0 ? 'I' : (resultadoFinal < 0 ? 'D' : 'N'));
     p.set(7.0, d.ident.nif).set(8.0, d.ident.rs);
     p.set(9.0, EJ);
     p.set(11.0, EJ).set(12.0, '01').set(13.0, '01');
@@ -49,6 +53,12 @@
     p.set(102.0, '1'); // INCN < 20M
     if (d.ident.contactoNombre) p.set(107.0, d.ident.contactoNombre);
     if (d.ident.contactoEmail) p.set(110.0, d.ident.contactoEmail);
+    if (rect.activa) {
+      p.set(22.0, '1');                                  // autoliquidación rectificativa
+      var just = String(rect.justificante || '').replace(/\D/g, '');
+      if (just) p.set(23.0, just);                       // nº justificante anterior (13 dígitos)
+      p.set(24.0, '1');                                  // motivo: rectificaciones
+    }
     pages.push(p);
 
     // ── Página 1 bis ──
@@ -152,7 +162,11 @@
     p.set('[00601]', d.liq.pagos[0]).set('[00603]', d.liq.pagos[1]).set('[00605]', d.liq.pagos[2]);
     p.set('[00611]', resultado);
     p.set('[01586]', resultado);
-    p.set('[00621]', resultado);
+    if (rect.activa) {
+      if (ingAnt) p.set('[01578]', ingAnt);              // ingresado en autoliq. anteriores
+      if (devAnt) p.set('[01584]', devAnt);              // devoluciones acordadas por AEAT
+    }
+    p.set('[00621]', resultadoFinal);
     pages.push(p);
 
     // ── Página 20: límite deducibilidad gastos financieros (art. 16 LIS) ──
@@ -189,9 +203,9 @@
     p.set(10.0, '01').set(11.0, '01').set(12.0, EJ.slice(2));
     p.set(13.0, '31').set(14.0, '12').set(15.0, EJ.slice(2));
     p.set(16.0, d.ident.nif).set(17.0, d.ident.rs);
-    p.set(18.0, d.liq.bi).set(19.0, d.liq.cuota).set(20.0, resultado).set(21.0, resultado);
-    if (resultado > 0) { p.set(33.0, 'I'); p.set(34.0, resultado); }
-    else if (resultado < 0) { p.set(23.0, 'T'); p.set(24.0, Math.abs(resultado)); }
+    p.set(18.0, d.liq.bi).set(19.0, d.liq.cuota).set(20.0, resultado).set(21.0, resultadoFinal);
+    if (resultadoFinal > 0) { p.set(33.0, 'I'); p.set(34.0, resultadoFinal); }
+    else if (resultadoFinal < 0) { p.set(23.0, 'T'); p.set(24.0, Math.abs(resultadoFinal)); }
     else { p.set(41.0, '1'); }
     pages.push(p);
 
